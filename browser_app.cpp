@@ -103,10 +103,10 @@ static int browser_read_language()
         }
         json_text[json_length] = '\0';
         if (json_length > 0) {
-            xapi_JsonDocument document{};
+            XJsonDocument document{};
             if (xapi_parseJson(json_text, &document) == XAPI_JSON_PARSE_OK && document.root != nullptr &&
                 document.root->type == XAPI_JSON_VALUE_OBJECT) {
-                xapi_JsonValue *value = xapi_jsonObjectGet(document.root, "language");
+                XJsonValue *value = xapi_jsonObjectGet(document.root, "language");
                 if (value != nullptr && value->type == XAPI_JSON_VALUE_NUMBER) {
                     language = static_cast<int>(value->as.numberValue);
                 }
