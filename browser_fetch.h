@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../xapi/include/xi18n.h"
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -57,34 +58,34 @@ struct BrowserFetchResult
     std::string body;
 };
 
-inline std::string browser_fetch_error_message(long long code, unsigned int tls_failure, bool english = false)
+inline std::string browser_fetch_error_message(long long code, unsigned int tls_failure, int language = 0)
 {
-    if (code == -125) return english ? "Request cancelled" : "请求已取消";
+    if (code == -125) return xapi_Translate(language, "browser.error.request_cancelled", "请求已取消");
     if (tls_failure == 1)
-        return english ? "TLS CA bundle unavailable or access denied" : "TLS CA 证书包不可用或访问被拒绝";
-    if (tls_failure == 2) return english ? "TLS certificate verification failed" : "TLS 证书验证失败";
-    if (tls_failure == 3) return english ? "TLS random source unavailable" : "TLS 随机数源不可用";
+        return xapi_Translate(language, "browser.error.tls_ca_bundle_unavailable_or_access_denied", "TLS CA 证书包不可用或访问被拒绝");
+    if (tls_failure == 2) return xapi_Translate(language, "browser.error.tls_certificate_verification_failed", "TLS 证书验证失败");
+    if (tls_failure == 3) return xapi_Translate(language, "browser.error.tls_random_source_unavailable", "TLS 随机数源不可用");
     if (tls_failure == 4)
-        return english ? "Invalid system time for TLS verification" : "系统时间无效，无法验证 TLS 证书";
-    if (tls_failure == 5) return english ? "TLS protocol negotiation failed" : "TLS 协议协商失败";
+        return xapi_Translate(language, "browser.error.invalid_system_time_for_tls_verification", "系统时间无效，无法验证 TLS 证书");
+    if (tls_failure == 5) return xapi_Translate(language, "browser.error.tls_protocol_negotiation_failed", "TLS 协议协商失败");
     switch (code)
     {
-    case -110: return english ? "Request timed out" : "请求超时";
-    case -90: return english ? "Response exceeds size limit" : "响应超过大小限制";
-    case -104: return english ? "Connection reset by peer" : "连接被对端重置";
-    case -103: return english ? "Connection aborted" : "连接意外中断";
-    case -32: return english ? "Connection closed while sending" : "发送时连接已断开";
-    case -100: return english ? "Network is down" : "网络连接不可用";
-    case -101: return english ? "Network unreachable" : "无法连接到网络";
-    case -111: return english ? "Connection refused" : "服务器拒绝连接";
-    case -113: return english ? "Server unreachable" : "无法连接到服务器";
-    case -22: return english ? "Invalid URL or unsupported protocol" : "URL 无效或协议不支持";
-    case -71: return english ? "Invalid HTTP response" : "服务器返回了无效的 HTTP 响应";
-    case -95: return english ? "Unsupported response encoding or protocol" : "不支持的响应编码或协议";
-    case -13: return english ? "Access denied" : "访问被拒绝";
-    case -12: return english ? "Not enough memory" : "内存不足";
+    case -110: return xapi_Translate(language, "browser.error.request_timed_out", "请求超时");
+    case -90: return xapi_Translate(language, "browser.error.response_exceeds_size_limit", "响应超过大小限制");
+    case -104: return xapi_Translate(language, "browser.error.connection_reset_by_peer", "连接被对端重置");
+    case -103: return xapi_Translate(language, "browser.error.connection_aborted", "连接意外中断");
+    case -32: return xapi_Translate(language, "browser.error.connection_closed_while_sending", "发送时连接已断开");
+    case -100: return xapi_Translate(language, "browser.error.network_is_down", "网络连接不可用");
+    case -101: return xapi_Translate(language, "browser.error.network_unreachable", "无法连接到网络");
+    case -111: return xapi_Translate(language, "browser.error.connection_refused", "服务器拒绝连接");
+    case -113: return xapi_Translate(language, "browser.error.server_unreachable", "无法连接到服务器");
+    case -22: return xapi_Translate(language, "browser.error.invalid_url_or_unsupported_protocol", "URL 无效或协议不支持");
+    case -71: return xapi_Translate(language, "browser.error.invalid_http_response", "服务器返回了无效的 HTTP 响应");
+    case -95: return xapi_Translate(language, "browser.error.unsupported_response_encoding_or_protocol", "不支持的响应编码或协议");
+    case -13: return xapi_Translate(language, "browser.error.access_denied", "访问被拒绝");
+    case -12: return xapi_Translate(language, "browser.error.not_enough_memory", "内存不足");
     default:
-        return std::string(english ? "Network request failed (" : "网络请求失败 (") + std::to_string(code) + ")";
+        return std::string(xapi_Translate(language, "browser.error.network_request_failed", "网络请求失败 (")) + std::to_string(code) + ")";
     }
 }
 

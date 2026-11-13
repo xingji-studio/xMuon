@@ -1625,6 +1625,16 @@ struct BrowserScriptRuntime::Impl
         if (!result(JS_Eval(context, browser_js_bootstrap, sizeof(browser_js_bootstrap) - 1,
                             "xj380:web-platform", JS_EVAL_TYPE_GLOBAL))) return false;
         global = JS_GetGlobalObject(context);
+        // Initialize navigator before any page script runs. Regionless tags do
+        // not need a duplicate primary-language fallback.
+        auto navigator = JS_GetPropertyStr(context, global, "navigator");
+        JS_SetPropertyStr(context, navigator, "language", JS_NewString(context, host.language.c_str()));
+        auto languages = JS_NewArray(context);
+        JS_SetPropertyUint32(context, languages, 0, JS_NewString(context, host.language.c_str()));
+        if (host.language != host.language_primary)
+            JS_SetPropertyUint32(context, languages, 1, JS_NewString(context, host.language_primary.c_str()));
+        JS_SetPropertyStr(context, navigator, "languages", languages);
+        JS_FreeValue(context, navigator);
         for (const char *name : {"__dispatch", "__lifecycle", "__pump", "__currentScript", "__node", "__historyChanged", "__viewChanged"})
         {
             callbacks.emplace(name, JS_GetPropertyStr(context, global, name));

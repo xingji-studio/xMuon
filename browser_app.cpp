@@ -1,4 +1,6 @@
 #include "browser_fetch.h"
+#include "browser_language.h"
+#include "../xapi/include/xi18n.h"
 #include "browser_resources.h"
 #include "browser_ui.h"
 #include "browser_http_bridge.h"
@@ -73,7 +75,7 @@ static int g_browser_language = XJ380_LANGUAGE_ZH_CN;
 
 static int browser_normalize_language(int language)
 {
-    return language == XJ380_LANGUAGE_EN_US ? XJ380_LANGUAGE_EN_US : XJ380_LANGUAGE_ZH_CN;
+    return xj380_language_normalize(language);
 }
 
 static int browser_read_language()
@@ -108,7 +110,7 @@ static int browser_read_language()
                 document.root->type == XAPI_JSON_VALUE_OBJECT) {
                 XJsonValue *value = xapi_jsonObjectGet(document.root, "language");
                 if (value != nullptr && value->type == XAPI_JSON_VALUE_NUMBER) {
-                    language = static_cast<int>(value->as.numberValue);
+                    language = xj380_language_from_number(&value->as.numberValue);
                 }
             }
             xapi_freeJsonDocument(&document);
@@ -120,9 +122,9 @@ static int browser_read_language()
     return browser_normalize_language(language);
 }
 
-static char *browser_tr(const char *zh_cn, const char *en_us)
+static const char *browser_tr(const char *key, const char *fallback)
 {
-    return (char *)(browser_normalize_language(g_browser_language) == XJ380_LANGUAGE_EN_US ? en_us : zh_cn);
+    return xapi_Translate(g_browser_language, key, fallback);
 }
 
 static std::uint32_t litehtml_color(const litehtml::web_color &color)
@@ -492,7 +494,7 @@ static bool decode_data_url(const std::string &url, BrowserFetchResult &result)
     const std::size_t comma = url.find(',');
     if (comma == std::string::npos) {
         result.ok = false;
-        result.error = browser_tr("data URL 无效", "Invalid data URL");
+        result.error = browser_tr("browser.ui.invalid_data_url", "data URL 无效");
         return true;
     }
 
@@ -505,8 +507,8 @@ static bool decode_data_url(const std::string &url, BrowserFetchResult &result)
     const bool ok = is_base64 ? decode_base64(payload, decoded) : percent_decode(payload, decoded);
     if (!ok) {
         result.ok = false;
-        result.error = is_base64 ? browser_tr("data URL base64 无效", "Invalid data URL base64") :
-                                   browser_tr("data URL 转义无效", "Invalid data URL escaping");
+        result.error = is_base64 ? browser_tr("browser.ui.invalid_data_url_base64", "data URL base64 无效") :
+                                   browser_tr("browser.ui.invalid_data_url_escaping", "data URL 转义无效");
         return true;
     }
 
@@ -548,7 +550,9 @@ static std::string build_fallback_document(const std::string &title,
 {
     std::string html;
     html.reserve(excerpt.size() + 512);
-    html += "<html><head><meta charset=\"utf-8\"><title>";
+    html += "<html lang=\"";
+    html += browser_language_tag(g_browser_language);
+    html += "\"><head><meta charset=\"utf-8\"><title>";
     html += escape_html_text(title);
     html += "</title></head><body style=\"font-family:sans-serif;background:#fafaf9;color:#1f2933;padding:24px;\">";
     html += "<h1 style=\"font-size:24px;margin:0 0 12px 0;\">";
@@ -777,7 +781,7 @@ static std::vector<std::string> wrap_text_for_width(const std::string &text, int
     }
 
     if (lines.empty()) {
-        lines.emplace_back(browser_tr("没有内容。", "No content."));
+        lines.emplace_back(browser_tr("browser.ui.no_content", "没有内容。"));
     }
 
     return lines;
@@ -888,7 +892,7 @@ public:
         url_input_[0] = 0;
         input_len_ = static_cast<int>(std::strlen(url_input_));
         input_cursor_ = input_len_;
-        std::snprintf(status_, sizeof(status_), "%s", browser_tr("就绪", "Ready"));
+        std::snprintf(status_, sizeof(status_), "%s", browser_tr("browser.ui.ready", "就绪"));
     }
 
     ~BrowserApp();
@@ -1808,7 +1812,7 @@ void BrowserContainer::import_css(litehtml::string &text, const litehtml::string
     if (++app_.css_import_count_ > 64)
     {
         app_.resource_failed_ = true;
-        app_.network_notice_ = browser_tr("CSS 导入超过限制", "CSS import limit exceeded");
+        app_.network_notice_ = browser_tr("browser.ui.css_import_limit_exceeded", "CSS 导入超过限制");
         return;
     }
     const BrowserFetchResult *response = app_.resource_response(resolved);
@@ -1879,13 +1883,8 @@ void BrowserContainer::get_media_features(litehtml::media_features &media) const
 
 void BrowserContainer::get_language(litehtml::string &language, litehtml::string &culture) const
 {
-    if (g_browser_language == XJ380_LANGUAGE_EN_US) {
-        language = "en";
-        culture = "US";
-    } else {
-        language = "zh";
-        culture = "CN";
-    }
+    language = browser_language_primary(g_browser_language);
+    culture = browser_language_region(g_browser_language);
 }
 
 void BrowserApp::set_title(const std::string &title)
@@ -1948,9 +1947,8 @@ BrowserPreparedDocument BrowserApp::prepare_document_html(const BrowserFetchResu
     }
     if (find_case_insensitive(html, "<html") == std::string::npos &&
         find_case_insensitive(html, "<body") == std::string::npos) {
-        html = build_fallback_document(browser_tr("HTML 片段", "HTML Fragment"),
-                                       browser_tr("响应不是完整 HTML 文档，已使用简化包装进行渲染。",
-                                                  "The response is not a full HTML document, so it was rendered in a simplified wrapper."),
+        html = build_fallback_document(browser_tr("browser.ui.html_fragment", "HTML 片段"),
+                                       browser_tr("browser.ui.the_response_is_not_a_full_html_document_so_it_was_rendered_in_a", "响应不是完整 HTML 文档，已使用简化包装进行渲染。"),
                                        html);
     }
 
@@ -2078,22 +2076,20 @@ const BrowserApp::ImageSize *BrowserApp::find_image_size(const std::string &url)
 void BrowserApp::update_retry_status(const BrowserFetchResult &failure, const BrowserRetryStatus &retry)
 {
     const std::string reason = browser_fetch_error_message(failure.error_code, failure.tls_failure,
-                                                          g_browser_language == XJ380_LANGUAGE_EN_US);
+                                                          g_browser_language);
     char notice[512];
     if (retry.phase == BrowserRetryStatus::Phase::Waiting)
     {
         std::snprintf(notice, sizeof(notice),
-                      browser_tr("%s；%u 秒后重试（第 %u/%u 次尝试）",
-                                 "%s; retrying in %u s (attempt %u/%u)"),
+                      browser_tr("browser.ui.s_retrying_in_u_s_attempt_u_u", "%s；%u 秒后重试（第 %u/%u 次尝试）"),
                       reason.c_str(), (retry.remaining_ms + 999) / 1000, retry.attempt, retry.max_attempts);
-        set_status(browser_tr("等待重试", "Retry pending"));
+        set_status(browser_tr("browser.ui.retry_pending", "等待重试"));
     }
     else
     {
-        std::snprintf(notice, sizeof(notice), browser_tr("%s；正在重试（第 %u/%u 次尝试）",
-                                                       "%s; retrying (attempt %u/%u)"),
+        std::snprintf(notice, sizeof(notice), browser_tr("browser.ui.s_retrying_attempt_u_u", "%s；正在重试（第 %u/%u 次尝试）"),
                       reason.c_str(), retry.attempt, retry.max_attempts);
-        set_status(browser_tr("正在重试", "Retrying"));
+        set_status(browser_tr("browser.ui.retrying", "正在重试"));
         log_line(std::string(notice) + " " + failure.error);
     }
     network_notice_ = notice;
@@ -2125,7 +2121,7 @@ BrowserFetchResult BrowserApp::fetch_resource(const std::string &url, bool navig
     {
         inline_result.cancelled = true;
         inline_result.error_code = -125;
-        inline_result.error = inline_result.error_summary = browser_fetch_error_message(-125, 0);
+        inline_result.error = inline_result.error_summary = browser_fetch_error_message(-125, 0, g_browser_language);
         return inline_result;
     }
     struct FetchScope
@@ -2174,9 +2170,9 @@ BrowserFetchResult BrowserApp::fetch_resource(const std::string &url, bool navig
         }
         else if (!result.ok)
         {
-            network_notice_ = browser_tr("资源加载失败：", "Resource failed: ") +
+            network_notice_ = browser_tr("browser.ui.resource_failed", "资源加载失败：") +
                 browser_fetch_error_message(result.error_code, result.tls_failure,
-                                            g_browser_language == XJ380_LANGUAGE_EN_US);
+                                            g_browser_language);
             invalidate_header();
         }
         if (context.retrying || !result.ok)
@@ -2245,7 +2241,7 @@ bool BrowserApp::enqueue_resource(const std::string &url, unsigned int kind, uns
     if (kind & BrowserImage) resource_jobs_.refetch_image(url);
     if (resource_jobs_.enqueue(url, kind, priority)) return true;
     resource_failed_ = true;
-    network_notice_ = browser_tr("页面资源超过数量限制", "Page resource limit exceeded");
+    network_notice_ = browser_tr("browser.ui.page_resource_limit_exceeded", "页面资源超过数量限制");
     invalidate_header();
     return false;
 }
@@ -2380,7 +2376,7 @@ void BrowserApp::pump_resources(bool update_document)
         {
             retry_notice_url_.clear();
             network_notice_ = resource_error_;
-            set_status(browser_tr("正在加载资源", "Loading resources"));
+            set_status(browser_tr("browser.ui.loading_resources", "正在加载资源"));
         }
         if (response.ok && response.status_code >= 200 && response.status_code < 300)
         {
@@ -2391,9 +2387,9 @@ void BrowserApp::pump_resources(bool update_document)
         else if (!response.cancelled)
         {
             resource_failed_ = true;
-            network_notice_ = browser_tr("资源加载失败：", "Resource failed: ") +
+            network_notice_ = browser_tr("browser.ui.resource_failed", "资源加载失败：") +
                 browser_fetch_error_message(response.error_code, response.tls_failure,
-                                            g_browser_language == XJ380_LANGUAGE_EN_US);
+                                            g_browser_language);
             if (response.ok) network_notice_ = "HTTP " + std::to_string(response.status_code) + " " + job->url;
             resource_error_ = network_notice_;
             notice_dismissed_ = false;
@@ -2424,7 +2420,7 @@ void BrowserApp::pump_resources(bool update_document)
     if (was_pending && !resources_pending())
     {
         if (!resource_failed_) network_notice_.clear();
-        set_status(resource_failed_ ? browser_tr("部分资源失败", "Partial load") : browser_tr("已加载", "Loaded"));
+        set_status(resource_failed_ ? browser_tr("browser.ui.partial_load", "部分资源失败") : browser_tr("browser.ui.loaded", "已加载"));
     }
 }
 
@@ -2678,7 +2674,7 @@ void BrowserApp::stop_loading()
     ++navigation_serial_;
     network_notice_.clear();
     invalidate_content();
-    set_status(browser_tr("已停止", "Stopped"));
+    set_status(browser_tr("browser.ui.stopped", "已停止"));
 }
 
 int BrowserApp::scroll_content_height() const
@@ -2746,8 +2742,7 @@ void BrowserApp::prepare_text_view(const BrowserFetchResult &response)
     std::string text = looks_like_html(response) ? html_to_text(response.body) : response.body;
     text = trim_copy(text);
     if (text.empty()) {
-        text = browser_tr("页面已加载，但没有生成可见文本内容。",
-                          "The page loaded, but did not produce visible text content.");
+        text = browser_tr("browser.ui.the_page_loaded_but_did_not_produce_visible_text_content", "页面已加载，但没有生成可见文本内容。");
     }
 
     page_text_ = text;
@@ -2790,24 +2785,24 @@ std::vector<BrowserButton> BrowserApp::chrome_buttons() const
         const bool partial = resource_failed_ && !browser_busy();
         buttons.push_back({partial ? BrowserCommand::ResourceInfo : BrowserCommand::RetryNow,
                            l.banner_action, partial ? Icon::Info : Icon::Reload,
-                           partial ? browser_tr("查看详情", "Details") :
-                           browser_busy() ? browser_tr("立即重试", "Retry now") : browser_tr("重新加载", "Reload")});
+                           partial ? browser_tr("browser.ui.details", "查看详情") :
+                           browser_busy() ? browser_tr("browser.ui.retry_now", "立即重试") : browser_tr("browser.ui.reload", "重新加载")});
         buttons.push_back({browser_busy() ? BrowserCommand::Stop : BrowserCommand::DismissNotice,
                            l.banner_close, Icon::Stop});
     }
     if (page_failed_)
     {
-        buttons.push_back({BrowserCommand::Reload, l.error_reload, Icon::Reload, browser_tr("重新加载", "Reload")});
-        buttons.push_back({BrowserCommand::Back, l.error_back, Icon::Back, browser_tr("返回上一页", "Go back")});
+        buttons.push_back({BrowserCommand::Reload, l.error_reload, Icon::Reload, browser_tr("browser.ui.reload", "重新加载")});
+        buttons.push_back({BrowserCommand::Back, l.error_back, Icon::Back, browser_tr("browser.ui.go_back", "返回上一页")});
         buttons.push_back({BrowserCommand::ErrorDetails, l.error_details, Icon::Down,
-                           browser_tr("查看详细信息", "Show details")});
+                           browser_tr("browser.ui.show_details", "查看详细信息")});
     }
     else if (!document_ && text_lines_.empty() && !loading_)
     {
         const int width = std::min(180, std::max(0, window_width_ - 48));
         buttons.push_back({BrowserCommand::FocusUrl,
                            {(window_width_ - width) / 2, content_y() + 270, width, 38},
-                           Icon::Arrow, browser_tr("输入网址", "Enter an address")});
+                           Icon::Arrow, browser_tr("browser.ui.enter_an_address", "输入网址")});
     }
     if (find_visible_ && !page_failed_)
     {
@@ -2821,11 +2816,11 @@ std::vector<BrowserButton> BrowserApp::chrome_buttons() const
             BrowserCommand::Reload, BrowserCommand::SiteInfo, BrowserCommand::ToggleTheme};
         const Icon icons[] = {Icon::Search, Icon::Arrow, Icon::Reload, Icon::Site,
                               dark_theme_ ? Icon::Sun : Icon::Moon};
-        const char *labels[] = {browser_tr("在页面中查找   Ctrl+F", "Find in page   Ctrl+F"),
-            browser_tr("输入网址       Ctrl+L", "Open address   Ctrl+L"),
-            browser_tr("重新加载       F5", "Reload         F5"),
-            browser_tr("连接信息", "Connection information"),
-            dark_theme_ ? browser_tr("切换浅色外观", "Use light appearance") : browser_tr("切换深色外观", "Use dark appearance")};
+        const char *labels[] = {browser_tr("browser.ui.find_in_page_ctrl_f", "在页面中查找   Ctrl+F"),
+            browser_tr("browser.ui.open_address_ctrl_l", "输入网址       Ctrl+L"),
+            browser_tr("browser.ui.reload_f5", "重新加载       F5"),
+            browser_tr("browser.ui.connection_information", "连接信息"),
+            dark_theme_ ? browser_tr("browser.ui.use_light_appearance", "切换浅色外观") : browser_tr("browser.ui.use_dark_appearance", "切换深色外观")};
         for (int i = 0; i < 5; ++i)
             buttons.push_back({commands[i], {l.popup.x + 6, l.popup.y + 6 + i * 38, l.popup.w - 12, 38},
                                icons[i], labels[i]});
@@ -3135,7 +3130,7 @@ void BrowserApp::find_next(int direction)
 {
     if (!find_match_count_)
     {
-        set_status(browser_tr("查找：无匹配", "Find: no matches"));
+        set_status(browser_tr("browser.ui.find_no_matches", "查找：无匹配"));
         return;
     }
     if (find_match_index_ < 0) find_match_index_ = direction < 0 ? find_match_count_ - 1 : 0;
@@ -3172,7 +3167,7 @@ void BrowserApp::find_next(int direction)
     }
     clamp_scroll();
     char status[64];
-    std::snprintf(status, sizeof(status), browser_tr("查找 %d/%d", "Find %d/%d"),
+    std::snprintf(status, sizeof(status), browser_tr("browser.ui.find_d_d", "查找 %d/%d"),
                   find_match_index_ + 1, find_match_count_);
     set_status(status);
     invalidate_content();
@@ -3665,7 +3660,7 @@ void BrowserApp::load_current_url()
     resource_failed_ = false;
     reset_resource_jobs();
     network_notice_.clear();
-    set_status(browser_tr("正在加载...", "Loading..."));
+    set_status(browser_tr("browser.ui.loading", "正在加载..."));
     render_header();
     xapi_RefreshWindow(window_);
     std::string candidate_url;
@@ -3677,7 +3672,7 @@ void BrowserApp::load_current_url()
         BrowserPreparedDocument prepared;
 
         {
-            log_line(std::string(browser_tr("开始获取 URL=", "Fetching URL=")) + target);
+            log_line(std::string(browser_tr("browser.ui.fetching_url", "开始获取 URL=")) + target);
             response = fetch_resource(target, true);
             if (serial != navigation_serial_ || cancelled_ || response.cancelled) return;
             if (!response.ok) {
@@ -3687,15 +3682,15 @@ void BrowserApp::load_current_url()
                 page_title_.clear();
                 text_content_height_ = 0;
                 update_find_matches();
-                log_line(std::string(browser_tr("加载失败：", "Load failed: ")) + response.error);
+                log_line(std::string(browser_tr("browser.ui.load_failed", "加载失败：")) + response.error);
                 document_.reset();
                 base_url_ = target;
                 scroll_y_ = 0;
                 current_url_ = target;
                 const std::string detail = browser_fetch_error_message(response.error_code, response.tls_failure,
-                                                                        g_browser_language == XJ380_LANGUAGE_EN_US);
+                                                                        g_browser_language);
                 char attempts[128];
-                std::snprintf(attempts, sizeof(attempts), browser_tr("尝试次数：%u", "Attempts: %u"),
+                std::snprintf(attempts, sizeof(attempts), browser_tr("browser.ui.attempts_u", "尝试次数：%u"),
                               response.attempts);
                 network_notice_ = detail + " (" + attempts + ")";
                 page_failed_ = true; page_secure_ = false; failure_details_open_ = false;
@@ -3708,13 +3703,12 @@ void BrowserApp::load_current_url()
                          history_target < static_cast<int>(history_.size())) history_index_ = history_target;
                 BrowserFetchResult error_page;
                 error_page.content_type = "text/plain";
-                error_page.body = std::string(browser_tr("无法打开网页", "Unable to open page")) + "\n\n" +
+                error_page.body = std::string(browser_tr("browser.ui.unable_to_open_page", "无法打开网页")) + "\n\n" +
                     target + "\n\n" + detail + "\n" + attempts + "\n\n" +
-                    browser_tr("点击刷新可以重新尝试。网络异常时请检查网络或 VPN 设置。",
-                               "Click Reload to try again. For connection problems, check your network or VPN.");
+                    browser_tr("browser.ui.click_reload_to_try_again_for_connection_problems_check_your_netw", "点击刷新可以重新尝试。网络异常时请检查网络或 VPN 设置。");
                 prepare_text_view(error_page);
                 load_scope.committed = true;
-                set_status(browser_tr("加载失败", "Load failed"));
+                set_status(browser_tr("browser.ui.load_failed_2", "加载失败"));
                 invalidate_content();
                 return;
             }
@@ -3730,8 +3724,7 @@ void BrowserApp::load_current_url()
             char info[256];
             std::snprintf(info,
                           sizeof(info),
-                          browser_tr("获取成功 状态=%d 字节=%llu 类型=%s 字符集=%s",
-                                     "Fetch ok status=%d bytes=%llu type=%s charset=%s"),
+                          browser_tr("browser.ui.fetch_ok_status_d_bytes_llu_type_s_charset_s", "获取成功 状态=%d 字节=%llu 类型=%s 字符集=%s"),
                           response.status_code,
                           static_cast<unsigned long long>(response.body.size()),
                           response.content_type.empty() ? "-" : response.content_type.c_str(),
@@ -3786,7 +3779,7 @@ void BrowserApp::load_current_url()
             }
 
             container_.set_viewport(content_width(), content_height());
-            log_line(browser_tr("开始创建文档", "Creating document"));
+            log_line(browser_tr("browser.ui.creating_document", "开始创建文档"));
             BrowserParserScope parser_scope;
             for (unsigned int pass = 0; pass < 8; ++pass)
             {
@@ -3797,14 +3790,14 @@ void BrowserApp::load_current_url()
                 if (!wait_stylesheets(serial)) return;
             }
             if (document_) {
-                log_line(browser_tr("开始渲染文档", "Rendering document"));
+                log_line(browser_tr("browser.ui.rendering_document", "开始渲染文档"));
                 document_->render(static_cast<float>(content_width()));
                 page_text_.clear();
                 if (document_->root()) {
                     collect_text(document_->root());
                     update_find_matches();
                 }
-                log_line(browser_tr("文档渲染完成", "Document rendered"));
+                log_line(browser_tr("browser.ui.document_rendered", "文档渲染完成"));
             } else {
                 prepared_fallback = true;
             }
@@ -3812,11 +3805,10 @@ void BrowserApp::load_current_url()
 
         if (prepared_fallback) {
             if (!BROWSER_ENABLE_LITEHTML) {
-                log_line(browser_tr("litehtml 已禁用：启用安全文本模式",
-                                    "litehtml is disabled: using safe text mode"));
+                log_line(browser_tr("browser.ui.litehtml_is_disabled_using_safe_text_mode", "litehtml 已禁用：启用安全文本模式"));
             }
             prepare_text_view(response);
-            log_line(browser_tr("安全文本渲染就绪", "Safe text rendering is ready"));
+            log_line(browser_tr("browser.ui.safe_text_rendering_is_ready", "安全文本渲染就绪"));
         }
         if (serial != navigation_serial_ || cancelled_) { document_.reset(); return; }
         forms_.collect(document_ ? document_->root() : nullptr);
@@ -3841,8 +3833,8 @@ void BrowserApp::load_current_url()
         std::snprintf(url_input_, sizeof(url_input_), "%s", current_url_.c_str());
         input_len_ = input_cursor_ = input_anchor_ = static_cast<int>(std::strlen(url_input_));
         prioritize_visible_images();
-        set_status(resources_pending() ? browser_tr("正在加载资源", "Loading resources") :
-                   resource_failed_ ? browser_tr("部分资源失败", "Partial load") : browser_tr("已加载", "Loaded"));
+        set_status(resources_pending() ? browser_tr("browser.ui.loading_resources", "正在加载资源") :
+                   resource_failed_ ? browser_tr("browser.ui.partial_load", "部分资源失败") : browser_tr("browser.ui.loaded", "已加载"));
         if (reason == BrowserNavReason::Normal || reason == BrowserNavReason::Replace)
             record_history(script_history_base_.empty() ? current_url_ : script_history_base_,
                            reason == BrowserNavReason::Replace);
@@ -3856,14 +3848,14 @@ void BrowserApp::load_current_url()
         load_scope.committed = true;
         invalidate_content();
     } catch (const std::exception &ex) {
-        log_line(std::string(browser_tr("异常：", "Exception: ")) + ex.what());
+        log_line(std::string(browser_tr("browser.ui.exception", "异常：")) + ex.what());
         document_.reset();
-        set_status(browser_tr("异常", "Exception"));
+        set_status(browser_tr("browser.ui.exception_2", "异常"));
         invalidate_content();
     } catch (...) {
-        log_line(browser_tr("未知异常", "Unknown exception"));
+        log_line(browser_tr("browser.ui.unknown_exception", "未知异常"));
         document_.reset();
-        set_status(browser_tr("异常", "Exception"));
+        set_status(browser_tr("browser.ui.exception_2", "异常"));
         invalidate_content();
     }
 }
@@ -3874,7 +3866,7 @@ void BrowserApp::update_window_title()
     std::string title = page_title_;
     while (title.size() > 160) title.resize(ime_utf8_previous(title.c_str(), title.size()));
     if (!title.empty()) title += " · ";
-    title += browser_tr("XJ380 浏览器", "XJ380 Browser");
+    title += browser_tr("browser.ui.xj380_browser", "XJ380 浏览器");
     if (window_) xapi_SetWindowTitle(window_, const_cast<char *>(title.c_str()));
 }
 
@@ -3939,8 +3931,8 @@ void BrowserApp::draw_chrome_input(browser_ui::Rect field, bool url)
     }
     if (length) chrome_canvas_.text({field.x, field.y + 4, field.w, 22}, view.text, theme.text);
     else chrome_canvas_.text({field.x, field.y + 4, field.w, 22},
-                             url ? browser_tr("输入网址", "Enter an address") :
-                                   browser_tr("在页面中查找", "Find in page"), theme.secondary);
+                             url ? browser_tr("browser.ui.enter_an_address", "输入网址") :
+                                   browser_tr("browser.ui.find_in_page", "在页面中查找"), theme.secondary);
     if (editing)
         chrome_canvas_.fill({field.x + std::min(field.w - 1, view.caret), field.y + 4, 1, 17}, theme.accent);
 }
@@ -3994,20 +3986,20 @@ void BrowserApp::render_native_page()
         chrome_canvas_.icon(failure_tls_ == 2 ? Icon::Alert : Icon::Globe,
                             {l.error_title.x, l.error_title.y - 76, 48, 48}, theme.secondary, 44);
         chrome_canvas_.text({l.error_title.x, l.error_title.y, l.error_title.w, 38},
-                            failure_tls_ == 2 ? browser_tr("无法验证此网站的身份", "Unable to verify this website") :
-                                               browser_tr("暂时无法打开此网页", "This page could not be opened"),
+                            failure_tls_ == 2 ? browser_tr("browser.ui.unable_to_verify_this_website", "无法验证此网站的身份") :
+                                               browser_tr("browser.ui.this_page_could_not_be_opened", "暂时无法打开此网页"),
                             theme.text, window_width_ < 600 ? 15 : 18);
         chrome_canvas_.text({l.error_title.x, l.error_title.y + 43, l.error_title.w, 22}, page_host(), theme.accent);
         std::string message = browser_fetch_error_message(failure_code_, failure_tls_,
-                                                          g_browser_language == XJ380_LANGUAGE_EN_US);
+                                                          g_browser_language);
         if (failure_attempts_ > 1)
-            message += browser_tr("。已尝试 ", ". Attempted ") + std::to_string(failure_attempts_) +
-                       browser_tr(" 次，仍未成功。", " times without success.");
-        else message += browser_tr("。", ".");
+            message += browser_tr("browser.ui.attempted", "。已尝试 ") + std::to_string(failure_attempts_) +
+                       browser_tr("browser.ui.times_without_success", " 次，仍未成功。");
+        else message += browser_tr("browser.ui.punctuation", "。");
         draw_chrome_paragraph(l.error_body, message, theme.secondary);
         const std::string help = failure_tls_ == 2 || failure_tls_ == 4
-            ? browser_tr("请检查系统日期与时间，或联系网站管理员。", "Check the system date and time, or contact the website owner.")
-            : browser_tr("请检查网址与网络连接，或稍后再试。", "Check the address and network connection, or try again later.");
+            ? browser_tr("browser.ui.check_the_system_date_and_time_or_contact_the_website_owner", "请检查系统日期与时间，或联系网站管理员。")
+            : browser_tr("browser.ui.check_the_address_and_network_connection_or_try_again_later", "请检查网址与网络连接，或稍后再试。");
         draw_chrome_paragraph({l.error_body.x, l.error_body.y + 58, l.error_body.w, 50}, help, theme.secondary);
         for (const auto &button : chrome_buttons())
         {
@@ -4027,7 +4019,7 @@ void BrowserApp::render_native_page()
         chrome_canvas_.icon(failure_details_open_ ? Icon::Up : Icon::Down,
                             {l.error_details.x, l.error_details.y, 18, 28}, theme.secondary, 13);
         chrome_canvas_.text({l.error_details.x + 24, l.error_details.y + 5, l.error_details.w - 24, 22},
-                            browser_tr("查看详细信息", "Show details"), theme.secondary);
+                            browser_tr("browser.ui.show_details", "查看详细信息"), theme.secondary);
         if (failure_details_open_)
         {
             const std::string code = "errno " + std::to_string(failure_code_) + " / TLS " + std::to_string(failure_tls_);
@@ -4042,11 +4034,11 @@ void BrowserApp::render_native_page()
         const int top = content_y() + 68;
         chrome_canvas_.round({window_width_ / 2 - 28, top, 56, 56}, 15, theme.field);
         chrome_canvas_.icon(Icon::Globe, {window_width_ / 2 - 28, top, 56, 56}, theme.accent, 32);
-        const std::string title = browser_tr("从一个网址开始。", "Start with an address.");
+        const std::string title = browser_tr("browser.ui.start_with_an_address", "从一个网址开始。");
         const unsigned size = window_width_ < 520 ? 17 : 21;
         const int text_width = text_width_px(title, size);
         chrome_canvas_.text({std::max(left, (window_width_ - text_width) / 2), top + 85, width, 42}, title, theme.text, size);
-        const std::string description = browser_tr("在地址栏输入网址，按 Enter 打开。", "Enter a website address above and press Enter.");
+        const std::string description = browser_tr("browser.ui.enter_a_website_address_above_and_press_enter", "在地址栏输入网址，按 Enter 打开。");
         draw_chrome_paragraph({left + 12, top + 143, std::max(0, width - 24), 56}, description, theme.secondary);
         for (const auto &button : chrome_buttons())
             if (button.command == BrowserCommand::FocusUrl)
@@ -4057,8 +4049,7 @@ void BrowserApp::render_native_page()
                                     button.label, theme.on_accent);
             }
         chrome_canvas_.text({left + 12, content_y() + 336, std::max(0, width - 24), 24},
-                            browser_tr("Ctrl+L  输入网址       Ctrl+F  页面查找",
-                                       "Ctrl+L  Address       Ctrl+F  Find in page"), theme.secondary);
+                            browser_tr("browser.ui.ctrl_l_address_ctrl_f_find_in_page", "Ctrl+L  输入网址       Ctrl+F  页面查找"), theme.secondary);
     }
     chrome_canvas_.present(window_);
 }
@@ -4080,8 +4071,8 @@ void BrowserApp::render_content()
             document_->draw(window_, content_x(), content_y() - scroll_y_, &clip, content_x(), content_y());
             draw_find_highlights();
         }
-        catch (const std::exception &error) { log_line(error.what()); set_status(browser_tr("绘制异常", "Draw exception")); }
-        catch (...) { log_line("Browser draw exception"); set_status(browser_tr("绘制异常", "Draw exception")); }
+        catch (const std::exception &error) { log_line(error.what()); set_status(browser_tr("browser.ui.draw_exception", "绘制异常")); }
+        catch (...) { log_line("Browser draw exception"); set_status(browser_tr("browser.ui.draw_exception", "绘制异常")); }
     }
     else
     {
@@ -4137,11 +4128,11 @@ void BrowserApp::render_overlays(bool content_repainted)
     {
         switch (hovered_command_)
         {
-        case BrowserCommand::Back: hint = browser_tr("后退  Alt+Left", "Back  Alt+Left"); break;
-        case BrowserCommand::Forward: hint = browser_tr("前进  Alt+Right", "Forward  Alt+Right"); break;
-        case BrowserCommand::Reload: hint = browser_tr("重新加载  F5", "Reload  F5"); break;
-        case BrowserCommand::Stop: hint = browser_tr("停止加载  Esc", "Stop loading  Esc"); break;
-        case BrowserCommand::FocusFind: hint = browser_tr("在页面中查找  Ctrl+F", "Find in page  Ctrl+F"); break;
+        case BrowserCommand::Back: hint = browser_tr("browser.ui.back_alt_left", "后退  Alt+Left"); break;
+        case BrowserCommand::Forward: hint = browser_tr("browser.ui.forward_alt_right", "前进  Alt+Right"); break;
+        case BrowserCommand::Reload: hint = browser_tr("browser.ui.reload_f5_2", "重新加载  F5"); break;
+        case BrowserCommand::Stop: hint = browser_tr("browser.ui.stop_loading_esc", "停止加载  Esc"); break;
+        case BrowserCommand::FocusFind: hint = browser_tr("browser.ui.find_in_page_ctrl_f_2", "在页面中查找  Ctrl+F"); break;
         default: break;
         }
     }
@@ -4185,25 +4176,25 @@ void BrowserApp::render_overlays(bool content_repainted)
     {
         chrome_canvas_.icon(Icon::Alert, {rect.x + 14, rect.y + 16, 24, 28}, theme.warning_text);
         chrome_canvas_.text({rect.x + 46, rect.y + 21, rect.w - 60, 26},
-                            browser_tr("部分资源未能加载", "Some resources did not load"), theme.text, 11);
+                            browser_tr("browser.ui.some_resources_did_not_load", "部分资源未能加载"), theme.text, 11);
         draw_chrome_paragraph({rect.x + 18, rect.y + 63, rect.w - 36, 70}, resource_error_, theme.secondary);
         draw_chrome_paragraph({rect.x + 18, rect.y + 140, rect.w - 36, 60},
-            browser_tr("正文仍可查看。重新加载网页可以再次尝试。", "The page remains usable. Reload it to try again."), theme.secondary);
+            browser_tr("browser.ui.the_page_remains_usable_reload_it_to_try_again", "正文仍可查看。重新加载网页可以再次尝试。"), theme.secondary);
     }
     else
     {
         const bool secure = page_secure_ && !page_failed_ && !loading_ && !load_pending_;
-        const std::string title = secure ? browser_tr("连接已加密", "Connection is encrypted") :
-            page_failed_ || browser_busy() ? browser_tr("尚未建立可靠连接", "Connection is not ready") :
-            browser_tr("连接未加密", "Connection is not encrypted");
+        const std::string title = secure ? browser_tr("browser.ui.connection_is_encrypted", "连接已加密") :
+            page_failed_ || browser_busy() ? browser_tr("browser.ui.connection_is_not_ready", "尚未建立可靠连接") :
+            browser_tr("browser.ui.connection_is_not_encrypted", "连接未加密");
         chrome_canvas_.icon(secure ? Icon::Shield : Icon::Info, {rect.x + 16, rect.y + 16, 24, 28}, theme.accent);
         chrome_canvas_.text({rect.x + 48, rect.y + 20, rect.w - 64, 28}, title, theme.text, 11);
         chrome_canvas_.text({rect.x + 18, rect.y + 62, rect.w - 36, 22}, page_host(), theme.secondary);
         const std::string message = secure
-            ? browser_tr("此网站的证书已通过验证，数据通过 HTTPS 传输。", "The certificate was verified. Data is transferred over HTTPS.")
+            ? browser_tr("browser.ui.the_certificate_was_verified_data_is_transferred_over_https", "此网站的证书已通过验证，数据通过 HTTPS 传输。")
             : browser_busy() || page_failed_
-                ? browser_tr("连接完成前，无法确认此网站的安全状态。", "The website cannot be verified before its connection completes.")
-                : browser_tr("此页面使用 HTTP，传输内容未经加密。", "This page uses HTTP. Its content is not encrypted.");
+                ? browser_tr("browser.ui.the_website_cannot_be_verified_before_its_connection_completes", "连接完成前，无法确认此网站的安全状态。")
+                : browser_tr("browser.ui.this_page_uses_http_its_content_is_not_encrypted", "此页面使用 HTTP，传输内容未经加密。");
         draw_chrome_paragraph({rect.x + 18, rect.y + 98, rect.w - 36, 90}, message, theme.secondary);
     }
     chrome_canvas_.present(window_);
@@ -4238,7 +4229,7 @@ void BrowserApp::initialize_window()
     g_app = this;
 
     XWINDOW window {};
-    window.title = browser_tr("XJ380 浏览器", "XJ380 Browser");
+    window.title = const_cast<char *>(browser_tr("browser.ui.xj380_browser", "XJ380 浏览器"));
     window.width = BROWSER_WIDTH;
     window.height = BROWSER_HEIGHT;
     window.sets = XWIN_NORMAL | XWIN_SUPPORT_RESIZEABLE;
@@ -4273,7 +4264,7 @@ int BrowserApp::run()
             resource_jobs_.cancel();
             image_decode_queue_.clear();
             log_line(error.what());
-            set_status(browser_tr("资源加载异常", "Resource error"));
+            set_status(browser_tr("browser.ui.resource_error", "资源加载异常"));
         }
         xapi_Sleep(resources_pending() ? 1 : BROWSER_LOOP_SLEEP_MS);
     }

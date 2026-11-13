@@ -2,6 +2,18 @@
 
 // Included after BrowserApp: these controls remain in the browser integration,
 // with layout, stacking and clipping owned by litehtml's normal render tree.
+// Translate browser-owned form errors at the UI boundary; the form model retains its original values.
+static std::string browser_form_error(const std::string &error)
+{
+    if (error == "This control has no enabled form.") return browser_tr("browser.form.error.no_enabled_form", "This control has no enabled form.");
+    if (error == "The form is detached.") return browser_tr("browser.form.error.detached", "The form is detached.");
+    if (error == "The default submit button is disabled.") return browser_tr("browser.form.error.submit_disabled", "The default submit button is disabled.");
+    if (error == "Only GET forms are supported.") return browser_tr("browser.form.error.get_only", "Only GET forms are supported.");
+    if (error == "The form action must be an HTTP or HTTPS URL.") return browser_tr("browser.form.error.invalid_action", "The form action must be an HTTP or HTTPS URL.");
+    if (error == "The submitted URL exceeds the browser's 4095-byte limit.") return browser_tr("browser.form.error.url_limit", "The submitted URL exceeds the browser's 4095-byte limit.");
+    return error;
+}
+
 class BrowserFormElement final : public litehtml::html_tag
 {
     BrowserApp &app_;
@@ -31,7 +43,7 @@ public:
         {
             std::string label = get_attr("value", "");
             if (tag == "button") get_text(label);
-            if (label.empty()) label = type == "reset" ? "Reset" : "Submit";
+            if (label.empty()) label = type == "reset" ? browser_tr("browser.form.reset", "Reset") : browser_tr("browser.form.submit", "Submit");
             const auto style = app_.container_.font_style(css().get_font());
             size.width = std::max(64.0f, static_cast<float>(browser_ui::text_width(label, style)) + 16);
         }
@@ -194,7 +206,7 @@ void BrowserApp::submit_form(int index, bool dispatch_event)
     }
     else
     {
-        network_notice_ = submission.error;
+        network_notice_ = browser_form_error(submission.error);
         notice_dismissed_ = false;
         invalidate_all();
     }
@@ -268,7 +280,7 @@ void BrowserApp::draw_form_control(HDLE hdc, const litehtml::element::ptr &eleme
     if (control.kind == Kind::Submit || control.kind == Kind::Button || control.kind == Kind::Reset)
     {
         if (std::strcmp(element->get_tagName(), "button") == 0) { label.clear(); element->get_text(label); }
-        if (label.empty()) label = control.kind == Kind::Reset ? "Reset" : "Submit";
+        if (label.empty()) label = control.kind == Kind::Reset ? browser_tr("browser.form.reset", "Reset") : browser_tr("browser.form.submit", "Submit");
     }
     if (control.kind == Kind::Password)
     {

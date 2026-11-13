@@ -37,6 +37,8 @@ enum class BrowserScriptModuleState
 // operating-system or filesystem bindings are exposed to page JavaScript.
 struct BrowserScriptHost
 {
+    std::string language = "zh-CN";
+    std::string language_primary = "zh";
     std::function<void(const std::string &, bool)> navigate;
     std::function<unsigned long long()> monotonic_ms;
     std::function<std::string(const std::string &)> fetch;

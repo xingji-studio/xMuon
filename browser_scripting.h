@@ -44,6 +44,8 @@ void BrowserApp::initialize_scripts(const std::string &url)
 {
     if (!document_) return;
     BrowserScriptHost host;
+    host.language = browser_language_tag(g_browser_language);
+    host.language_primary = browser_language_primary(g_browser_language);
     host.monotonic_ms = [] { return browser_http_now_ms(); };
     host.current_url = [this] { return current_url_; };
     host.history_update = [this](const std::string &target, bool replace, const std::string &state) {
@@ -226,7 +228,7 @@ void BrowserApp::flush_script_submission()
     {
         const auto submission = forms_.submit_owner(node, current_url_, base_url_);
         if (submission.ok) { script_navigation_ = submission.url; script_replace_ = false; }
-        else { network_notice_ = submission.error; notice_dismissed_ = false; invalidate_header(); }
+        else { network_notice_ = browser_form_error(submission.error); notice_dismissed_ = false; invalidate_header(); }
     }
     else
     {
