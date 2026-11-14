@@ -18,8 +18,17 @@
 #include <utility>
 #include <vector>
 
+extern "C" int xapi_random_bytes(void *, uint32_t);
+
 namespace
 {
+JSValue ordinary_random(JSContext *context, JSValueConst, int, JSValueConst *)
+{
+    uint64_t bits;
+    if (xapi_random_bytes(&bits, sizeof(bits))) return JS_ThrowInternalError(context, "Random service unavailable");
+    return JS_NewFloat64(context, double(bits >> 11) * (1.0 / 9007199254740992.0));
+}
+
 unsigned long long module_token()
 {
     static std::atomic<unsigned long long> next {1};
@@ -1618,6 +1627,11 @@ struct BrowserScriptRuntime::Impl
         definition.exotic = &exotic;
         if (JS_NewClass(runtime, browser_dom_node_class, &definition) < 0) return false;
         auto global = JS_GetGlobalObject(context);
+        auto math = JS_GetPropertyStr(context, global, "Math");
+        int random_result = JS_SetPropertyStr(context, math, "random",
+                                              JS_NewCFunction(context, ordinary_random, "random", 0));
+        JS_FreeValue(context, math);
+        if (random_result < 0) { JS_FreeValue(context, global); return false; }
         JS_SetPropertyStr(context, global, "__browser", JS_NewCFunction(context, bridge, "__browser", 4));
         JS_FreeValue(context, global);
         JS_UpdateStackTop(runtime);
