@@ -17,6 +17,17 @@ extern "C" void __deregister_frame(const void *begin);
 extern "C" void *g_browser_heap_base = NULL;
 extern "C" unsigned long long g_browser_heap_size = 0;
 
+// libgcc_eh may enumerate loader-managed ELF images while unwinding. This
+// static application registers its frame table explicitly with __register_frame;
+// an empty loader list leaves that registered FDE table authoritative.
+struct dl_phdr_info;
+extern "C" int dl_iterate_phdr(int (*cb)(dl_phdr_info *, unsigned long, void *), void *data)
+{
+    (void)cb;
+    (void)data;
+    return 0;
+}
+
 static uintptr_t browser_read_fs()
 {
     return enter_syscall(SYS_ARCH_PRCTL, ARCH_GET_FS, 0, 0, 0, 0, 0);
